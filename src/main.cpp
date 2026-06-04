@@ -1,7 +1,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ArduinoOTA.h>
-#include <ElegantOTA.h>
+#include <Updater.h>
 #include "secret.h"
 
 // ============================================
@@ -38,11 +38,23 @@ const uint8_t cislice[] = {
   0b01111110  // 9
 };
 
-uint8_t cisliceProCislo(int cislo) {
-  if (cislo < 0 || cislo > 9) {
-    return 0x00;
+const uint8_t DOT_BIT = 0x01; // nejnižší bit = tečka / decimal point
+bool digitDot[8] = { false, false, false, false, false, false, false, false };
+
+uint8_t cisliceProCislo(int cislo, bool tecka = false) {
+  uint8_t bits = 0x00;
+  if (cislo >= 0 && cislo <= 9) {
+    bits = cislice[cislo];
   }
-  return cislice[cislo];
+  if (tecka) {
+    bits |= DOT_BIT;
+  }
+  return bits;
+}
+
+void setDigitDot(int index, bool enable) {
+  if (index < 0 || index >= 8) return;
+  digitDot[index] = enable;
 }
 
 // Soft SPI transfer - optimized for speed
@@ -67,18 +79,29 @@ void aktualizujRetezec(uint8_t *data) {
 void zobrazCasy(int a, int b) {
   uint8_t pole[8] = {0};
 
-  int celkemSekund = casA / 1000;
+  int celkemSekund = a / 1000;
   int minuty = celkemSekund / 60;
   int sekundy = celkemSekund % 60;
 
-  pole[0] = cisliceProCislo((casA / 10) % 10);
-  pole[1] = cisliceProCislo((casA / 100) % 10);
-  pole[2] = cisliceProCislo(sekundy % 10); //vteriny
-  pole[3] = cisliceProCislo(sekundy / 10); //desitky vterin
+  pole[0] = cisliceProCislo((a / 10) % 10, digitDot[0]);
+  pole[1] = cisliceProCislo((a / 100) % 10, digitDot[1]);
+  pole[2] = cisliceProCislo(sekundy % 10, digitDot[2]); //vteřiny
+  pole[3] = cisliceProCislo(sekundy / 10, digitDot[3]); //desítky vteřin
 
-  pole[4] = cisliceProCislo(minuty % 10); //minuty
-  pole[5] = cisliceProCislo((minuty / 10) % 10); //desitky minut
-  pole[6] = cisliceProCislo(-1); //zatim vypnuto
+  if ((minuty % 10) <= 0) {
+    pole[4] = cisliceProCislo(-1, digitDot[4]);
+  } else {
+    pole[4] = cisliceProCislo(minuty % 10, digitDot[4]); //minuty
+  }
+
+  if (((minuty / 10) % 10) <= 0) {
+    pole[5] = cisliceProCislo(-1, digitDot[5]);
+  } else {
+    pole[5] = cisliceProCislo((minuty / 10) % 10, digitDot[5]); //desitky minut
+  }
+  
+  pole[6] = cisliceProCislo(-1, digitDot[6]); //zatim vypnuto
+  pole[7] = cisliceProCislo(-1, digitDot[7]); // rezervní pozice
 
   aktualizujRetezec(pole);
 }
@@ -142,17 +165,48 @@ void setup() {
   Serial.println(WiFi.softAPIP());
 
   server.on("/data", HTTP_GET, handleDataRequest);
+
+  server.on("/update", HTTP_GET, []() {
+    const char* page = "<!DOCTYPE html><html><body>"
+                       "<h1>Firmware upload</h1>"
+                       "<form method='POST' action='/update' enctype='multipart/form-data'>"
+                       "<input type='file' name='update'><br><br>"
+                       "<input type='submit' value='Upload firmware'>"
+                       "</form></body></html>";
+    server.send(200, "text/html", page);
+  });
+
+  server.on("/update", HTTP_POST,
+    []() {
+      server.sendHeader("Connection", "close");
+      server.send(200, "text/plain", Update.hasError() ? "FAIL" : "OK");
+      ESP.restart();
+    },
+    []() {
+      HTTPUpload& upload = server.upload();
+
+      if (upload.status == UPLOAD_FILE_START) {
+        Serial.println("Start firmware upload");
+        Update.begin(upload.totalSize);
+      } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+          Update.printError(Serial);
+        }
+      } else if (upload.status == UPLOAD_FILE_END) {
+        if (!Update.end(true)) {
+          Update.printError(Serial);
+        }
+        Serial.println("Upload finished");
+      }
+    }
+  );
+
   server.onNotFound([]() {
     server.send(404, "text/plain", "Not found");
   });
   server.begin();
-  Serial.println("HTTP server started on /data");
+  Serial.println("HTTP server started on /data and /update");
 
-  // elegantOTA setup
-  #if ENABLE_OTA_UPDATES
-    ElegantOTA.begin(&server);
-    Serial.println("elegantOTA ready - přístup na http://" + WiFi.softAPIP().toString() + "/update");
-  #endif
 
   // ArduinoOTA (standardní OTA)
   ArduinoOTA.setPassword(OTA_PASSWORD);
@@ -162,11 +216,6 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  
-  // elegantOTA handler
-  #if ENABLE_OTA_UPDATES
-    ElegantOTA.loop();
-  #endif
   
   ArduinoOTA.handle();
 
