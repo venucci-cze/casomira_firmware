@@ -35,7 +35,7 @@ const uint8_t cislice[] = {
   0b01101111, // 6
   0b00110100, // 7
   0b01111111, // 8
-  0b01111100  // 9
+  0b01111110  // 9
 };
 
 uint8_t cisliceProCislo(int cislo) {
@@ -45,46 +45,40 @@ uint8_t cisliceProCislo(int cislo) {
   return cislice[cislo];
 }
 
-// Soft SPI transfer with stable timing and interrupt protection.
-// Snížíme rychlost, aby dekodéry dostaly čistý hodinový a datový signál.
-const uint16_t SPI_PULSE_US = 1000;
-
+// Soft SPI transfer - optimized for speed
 void swSPITransfer(uint8_t hodnota) {
-  noInterrupts();
   for (int i = 7; i >= 0; i--) {
     digitalWrite(DS_PIN, (hodnota & (1 << i)) ? HIGH : LOW);
-    delayMicroseconds(SPI_PULSE_US);
     digitalWrite(SHCP_PIN, HIGH);
-    delayMicroseconds(SPI_PULSE_US);
     digitalWrite(SHCP_PIN, LOW);
-    delayMicroseconds(SPI_PULSE_US);
   }
-  interrupts();
 }
 
 void aktualizujRetezec(uint8_t *data) {
   digitalWrite(STCP_PIN, LOW);
-  delayMicroseconds(SPI_PULSE_US);
 
   for (int i = 7; i >= 0; i--) {
     swSPITransfer(data[i]);
   }
 
   digitalWrite(STCP_PIN, HIGH);
-  delayMicroseconds(SPI_PULSE_US);
 }
 
 void zobrazCasy(int a, int b) {
   uint8_t pole[8] = {0};
 
-  pole[0] = cisliceProCislo(7);
-  pole[1] = cisliceProCislo(6);
-  pole[2] = cisliceProCislo(5);
-  pole[3] = cisliceProCislo(4);
+  int celkemSekund = casA / 1000;
+  int minuty = celkemSekund / 60;
+  int sekundy = celkemSekund % 60;
 
-  pole[4] = cisliceProCislo(3);
-  pole[5] = cisliceProCislo(2);
-  pole[6] = cisliceProCislo(1);
+  pole[0] = cisliceProCislo((casA / 10) % 10);
+  pole[1] = cisliceProCislo((casA / 100) % 10);
+  pole[2] = cisliceProCislo(sekundy % 10); //vteriny
+  pole[3] = cisliceProCislo(sekundy / 10); //desitky vterin
+
+  pole[4] = cisliceProCislo(minuty % 10); //minuty
+  pole[5] = cisliceProCislo((minuty / 10) % 10); //desitky minut
+  pole[6] = cisliceProCislo(-1); //zatim vypnuto
 
   aktualizujRetezec(pole);
 }
@@ -181,10 +175,11 @@ void loop() {
     processMSB();
   #endif
 
-  if (debug_mode) {
-    casA = random(0, 100);
-    casB = random(0, 100);
-    delay(5000); // Simulace změny času každých 5 sekund
+  static unsigned long lastUpdate = 0;
+  if (debug_mode && millis() - lastUpdate >= 10) { // Aktualizace každých 1 ms
+    lastUpdate = millis();
+    casA = casA + 10; //tisiciny sekundy
+    casB = casB + 10; //tisiciny sekundy
   }
 
   updateDisplayIfChanged(casA, casB);
