@@ -29,14 +29,12 @@ jobs:
 
       - name: Prepare files
         run: |
-          cp .pio/build/d1_mini/firmware.bin firmware.bin
-          cp .pio/build/d1_mini/firmware.bin firmware-${{ github.ref_name }}.bin
+          cp .pio/build/nodemcuv2/firmware.bin firmware.bin
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             firmware.bin
-            firmware-${{ github.ref_name }}.bin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

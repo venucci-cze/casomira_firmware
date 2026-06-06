@@ -35,14 +35,12 @@ jobs:
 
       - name: Prepare artifacts
         run: |
-          copy tools\dist\firmware_updater.exe firmware_updater.exe
           copy tools\dist\firmware_updater.exe firmware_updater-${{ github.ref_name }}.exe
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            firmware_updater.exe
             firmware_updater-${{ github.ref_name }}.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
