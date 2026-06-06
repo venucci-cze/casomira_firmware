@@ -109,7 +109,7 @@ def run_gui():
     tk.Entry(root, textvariable=host_var, width=30).grid(row=0, column=1, columnspan=2)
 
     tk.Label(root, text='GitHub raw URL').grid(row=1, column=0, sticky='w')
-    url_var = tk.StringVar(value='https://raw.githubusercontent.com/<user>/<repo>/main/firmware.bin')
+    url_var = tk.StringVar(value='https://github.com/venucci-cze/casomira_firmware/releases/latest/download/firmware.bin')
     tk.Entry(root, textvariable=url_var, width=60).grid(row=1, column=1, columnspan=2)
 
     status_var = tk.StringVar(value='Připraveno')
